@@ -1,1 +1,60 @@
-oh no
+import serial
+import socket
+
+# Configure the serial connection to Arduino Mega
+arduino_port = '/dev/ttyUSB0'  # Change this as necessary
+baud_rate = 9600
+arduino = serial.Serial(arduino_port, baud_rate)
+
+# Configure the socket connection to receive RGB values from ESP32
+UDP_IP = "0.0.0.0"  # Listen on all interfaces #babaguhin pa depende sa esp32 cam protocol
+UDP_PORT = 12345    # Port to listen on #babaguhin pa
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # UDP socket
+sock.bind((UDP_IP, UDP_PORT))
+
+def calculate_paint_proportions(r, g, b, max_volume=250):
+    # Normalize RGB values
+    total = r + g + b
+    if total == 0:
+        return 0, 0, 0, 0, 0  # Avoid division by zero
+
+    # Calculate proportions based on some criteria
+    red_prop = (r / total) * max_volume
+    yellow_prop = (g / total) * max_volume * 0.5  # Less yellow
+    blue_prop = (b / total) * max_volume
+    white_prop = (max_volume - (red_prop + yellow_prop + blue_prop)) * 0.1  # White proportion
+    black_prop = max_volume - (red_prop + yellow_prop + blue_prop + white_prop)
+
+    return round(red_prop), round(yellow_prop), round(blue_prop), round(white_prop), round(black_prop)
+
+def main():
+    print("Listening for RGB values from ESP32...")
+
+    while True:
+        data, addr = sock.recvfrom(1024)  # Buffer size is 1024 bytes
+        rgb_values = data.decode('utf-8').strip().split(',')
+
+        if len(rgb_values) == 3:
+            try:
+                r = int(rgb_values[0])
+                g = int(rgb_values[1])
+                b = int(rgb_values[2])
+
+                print(f"Received RGB: R={r}, G={g}, B={b}")
+
+                # Calculate paint proportions
+                proportions = calculate_paint_proportions(r, g, b)
+                print(f"Calculated Proportions: {proportions}")
+
+                # Send proportions to Arduino
+                command = f"{proportions[0]},{proportions[1]},{proportions[2]},{proportions[3]},{proportions[4]}"
+                arduino.write(command.encode('utf-8'))
+                print("Sent to Arduino:", command)
+
+            except ValueError as e:
+                print("Error in converting RGB values:", e)
+
+if __name__ == "__main__":
+    main()
+
